@@ -1,0 +1,110 @@
+# This file is part of Astarte.
+#
+# Copyright 2025 SECO Mind Srl
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+name: Elixir CI
+
+on:
+  push:
+    branches:
+      - main
+      - "release-*"
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-22.04
+    env:
+      MIX_ENV: ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1.18.0
+        id: setup-elixir
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@v4
+        id: cache-deps
+        with:
+          path: deps
+          key: ${{ runner.os }}-${{ steps.setup-elixir.outputs.elixir-version }}-${{ steps.setup-elixir.outputs.otp-version }}-mix-${{ hashFiles('mix.lock') }}
+      - name: Install Dependencies and Compile
+        run: mix deps.get && mix deps.compile
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: _build
+
+  dializer:
+    name: Run Dialyzer
+    runs-on: ubuntu-22.04
+    needs: setup
+    env:
+      MIX_ENV: ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1.18.0
+        id: setup-elixir
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@v4
+        id: cache-deps
+        with:
+          path: deps
+          key: ${{ runner.os }}-${{ steps.setup-elixir.outputs.elixir-version }}-${{ steps.setup-elixir.outputs.otp-version }}-mix-${{ hashFiles('mix.lock') }}
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build
+      - name: Run Dialyzer
+        run: mix dialyzer
+      - name: Run credo
+        run: mix credo
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-22.04
+    needs: setup
+    env:
+      MIX_ENV: ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1.18.0
+        id: setup-elixir
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@v4
+        with:
+          path: deps
+          key: ${{ runner.os }}-${{ steps.setup-elixir.outputs.elixir-version }}-${{ steps.setup-elixir.outputs.otp-version }}-mix-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ steps.setup-elixir.outputs.elixir-version }}-${{ steps.setup-elixir.outputs.otp-version }}-mix-
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build
+      - name: Run Unit Tests & Coverage
+        run: mix test --cover
